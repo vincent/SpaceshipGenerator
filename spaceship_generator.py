@@ -195,7 +195,7 @@ def add_cylinders_to_face(bm, face):
             face.verts[2].co, (h + 1) / float(horizontal_step + 1))
         for v in range(vertical_step):
             pos = top.lerp(bottom, (v + 1) / float(vertical_step + 1))
-            cylinder_matrix = get_face_matrix(face, pos) * \
+            cylinder_matrix = get_face_matrix(face, pos) @ \
                 Matrix.Rotation(radians(90), 3, 'X').to_4x4()
             bmesh.ops.create_cone(bm,
                                   cap_ends=True,
@@ -225,7 +225,7 @@ def add_weapons_to_face(bm, face):
             face.verts[2].co, (h + 1) / float(horizontal_step + 1))
         for v in range(vertical_step):
             pos = top.lerp(bottom, (v + 1) / float(vertical_step + 1))
-            face_matrix = get_face_matrix(face, pos + face.normal * weapon_depth * 0.5) * \
+            face_matrix = get_face_matrix(face, pos + face.normal * weapon_depth * 0.5) @ \
                 Matrix.Rotation(radians(uniform(0, 90)), 3, 'Z').to_4x4()
 
             # Turret foundation
@@ -239,8 +239,8 @@ def add_weapons_to_face(bm, face):
                                   matrix=face_matrix)
 
             # Turret left guard
-            left_guard_mat = face_matrix * \
-                Matrix.Rotation(radians(90), 3, 'Y').to_4x4() * \
+            left_guard_mat = face_matrix @ \
+                Matrix.Rotation(radians(90), 3, 'Y').to_4x4() @ \
                 Matrix.Translation(Vector((0, 0, weapon_size * 0.6))).to_4x4()
             bmesh.ops.create_cone(bm,
                                   cap_ends=True,
@@ -252,8 +252,8 @@ def add_weapons_to_face(bm, face):
                                   matrix=left_guard_mat)
 
             # Turret right guard
-            right_guard_mat = face_matrix * \
-                Matrix.Rotation(radians(90), 3, 'Y').to_4x4() * \
+            right_guard_mat = face_matrix @ \
+                Matrix.Rotation(radians(90), 3, 'Y').to_4x4() @ \
                 Matrix.Translation(Vector((0, 0, weapon_size * -0.6))).to_4x4()
             bmesh.ops.create_cone(bm,
                                   cap_ends=True,
@@ -266,8 +266,8 @@ def add_weapons_to_face(bm, face):
 
             # Turret housing
             upward_angle = uniform(0, 45)
-            turret_house_mat = face_matrix * \
-                Matrix.Rotation(radians(upward_angle), 3, 'X').to_4x4() * \
+            turret_house_mat = face_matrix @ \
+                Matrix.Rotation(radians(upward_angle), 3, 'X').to_4x4() @ \
                 Matrix.Translation(Vector((0, weapon_size * -0.4, 0))).to_4x4()
             bmesh.ops.create_cone(bm,
                                   cap_ends=True,
@@ -286,7 +286,7 @@ def add_weapons_to_face(bm, face):
                                   diameter1=weapon_size * 0.1,
                                   diameter2=weapon_size * 0.1,
                                   depth=weapon_depth * 6,
-                                  matrix=turret_house_mat * \
+                                  matrix=turret_house_mat @ \
                                          Matrix.Translation(Vector((weapon_size * 0.2, 0, -weapon_size))).to_4x4())
             bmesh.ops.create_cone(bm,
                                   cap_ends=True,
@@ -295,7 +295,7 @@ def add_weapons_to_face(bm, face):
                                   diameter1=weapon_size * 0.1,
                                   diameter2=weapon_size * 0.1,
                                   depth=weapon_depth * 6,
-                                  matrix=turret_house_mat * \
+                                  matrix=turret_house_mat @ \
                                          Matrix.Translation(Vector((weapon_size * -0.2, 0, -weapon_size))).to_4x4())
 
 # Given a face, adds a sphere on the surface, partially inset.
@@ -424,6 +424,7 @@ def create_texture(name, tex_type, filename, use_alpha=True):
 
 # Adds a hull normal map texture slot to a material.
 def add_hull_normal_map(mat, hull_normal_colortex):
+    return
     mtex = mat.texture_slots.add()
     mtex.texture = hull_normal_colortex
     mtex.texture_coords = 'GLOBAL' # global UVs, yolo
@@ -675,11 +676,11 @@ def generate_spaceship(random_seed='',
 
     # Apply horizontal symmetry sometimes
     if allow_horizontal_symmetry and random() > 0.5:
-        bmesh.ops.symmetrize(bm, input=bm.verts[:] + bm.edges[:] + bm.faces[:], direction=1)
+        bmesh.ops.symmetrize(bm, input=bm.verts[:] + bm.edges[:] + bm.faces[:], direction='X')
 
     # Apply vertical symmetry sometimes - this can cause spaceship "islands", so disabled by default
     if allow_vertical_symmetry and random() > 0.5:
-        bmesh.ops.symmetrize(bm, input=bm.verts[:] + bm.edges[:] + bm.faces[:], direction=2)
+        bmesh.ops.symmetrize(bm, input=bm.verts[:] + bm.edges[:] + bm.faces[:], direction='Y')
 
     # Finish up, write the bmesh into a new mesh
     me = bpy.data.meshes.new('Mesh')
@@ -689,15 +690,14 @@ def generate_spaceship(random_seed='',
     # Add the mesh to the scene
     scene = bpy.context.scene
     obj = bpy.data.objects.new('Spaceship', me)
-    scene.objects.link(obj)
+    bpy.context.collection.objects.link(obj)
 
     # Select and make active
-    scene.objects.active = obj
-    obj.select = True
+    bpy.context.view_layer.objects.active = obj
 
     # Recenter the object to its center of mass
     bpy.ops.object.origin_set(type='ORIGIN_CENTER_OF_MASS')
-    ob = bpy.context.object
+    ob = bpy.context.view_layer.objects.active
     ob.location = (0, 0, 0)
 
     # Add a fairly broad bevel modifier to angularize shape
@@ -710,13 +710,13 @@ def generate_spaceship(random_seed='',
         bevel_modifier.limit_method = 'NONE'
 
     # Add materials to the spaceship
-    me = ob.data
-    materials = create_materials()
-    for mat in materials:
-        if assign_materials:
-            me.materials.append(mat)
-        else:
-            me.materials.append(bpy.data.materials.new(name="Material"))
+    # me = ob.data
+    # materials = create_materials()
+    # for mat in materials:
+    #     if assign_materials:
+    #         me.materials.append(mat)
+    #     else:
+    #         me.materials.append(bpy.data.materials.new(name="Material"))
     
     return obj
 
